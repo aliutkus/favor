@@ -1,0 +1,1 @@
+from .favor import FAVOR
