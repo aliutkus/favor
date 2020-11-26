@@ -13,6 +13,7 @@ class FAVOR(nn.Module):
         self,
         key_dim,
         orthonormal=True,
+        multihead=True,
         causal=False,
         m=128,
         redraw=True,
@@ -24,6 +25,7 @@ class FAVOR(nn.Module):
         self.key_dim = key_dim
 
         self.orthonormal=orthonormal
+        self.multihead = multihead
         self.causal = causal
         self.redraw=redraw
         self.m = m
@@ -50,16 +52,21 @@ class FAVOR(nn.Module):
 
     def forward(self, keys, values, queries):
         """
-        keys: (batch, keys_dimension, *keys_locations)
-        values: (batch, values_dimension, *values_locations)
-        queries: (batch, keys_dimension, *queries_locations)
+        keys: (batch, heads, keys_dimension, *keys_locations)
+        values: (batch, heads, values_dimension, *keys_locations)
+        queries: (batch, heads, keys_dimension, *queries_locations)
+
+        If multihead is False, the heads dimension is to be omitted.
         """
+        if self.multihead:
+            # hiding the heads dimension in the batch dimension
+            num_heads = keys.shape[1]
+            keys, values, queries = (x.view(-1, *x.shape[2:]) for x in (keys, values, queries))
+
         # flattening everything
         keys_locations = keys.shape[2:]
         queries_locations = queries.shape[2:]
-        keys = keys.view(*keys.shape[:2], -1)
-        values = values.view(*values.shape[:2], -1)
-        queries = queries.view(*queries.shape[:2], -1)
+        keys, values, queries = (x.view(*x.shape[:2], -1) for x in (keys, values, queries))
 
         if self.causal and keys_locations != queries_locations:
             raise ValueError(
@@ -67,9 +74,7 @@ class FAVOR(nn.Module):
                 '{}, {}'.format(keys_locations, queries_locations))
 
         # getting to (batch, n, dim)
-        keys = keys.permute(0, 2, 1)
-        values = values.permute(0, 2, 1)
-        queries = queries.permute(0, 2, 1)
+        keys, values, queries = (x.permute(0, 2, 1) for x in (keys, values, queries))
 
         # features are (m, key_dim). randomized here if necessary
         features = self.features()
@@ -125,4 +130,6 @@ class FAVOR(nn.Module):
         # restoring the desired shape
         out = out.permute(0, 2, 1)
         out = out.reshape(*out.shape[:2], *queries_locations)
+        if self.multihead:
+            out = out.view(-1, num_heads, *out.shape[1:])
         return out
