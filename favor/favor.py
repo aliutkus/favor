@@ -9,6 +9,7 @@ import numpy as np
 
 class FAVOR(nn.Module):
     """Fast Attention Via positive Orthogonal Random features"""
+
     def __init__(
         self,
         key_dim,
@@ -17,23 +18,22 @@ class FAVOR(nn.Module):
         m=128,
         redraw=True,
         h=lambda x: 1.,
-        f=[F.relu,],
+        f=[F.relu],
         randomizer=torch.randn,
     ):
         super(FAVOR, self).__init__()
         self.key_dim = key_dim
 
-        self.orthonormal=orthonormal
+        self.orthonormal = orthonormal
         self.causal = causal
-        self.redraw=redraw
+        self.redraw = redraw
         self.m = m
         self.h = h
         self.f = f
-        self.randomizer=randomizer
+        self.randomizer = randomizer
 
         self._features = None
-        self.register_buffer('phi_scale', torch.tensor(1./ math.sqrt(m)))
-
+        self.register_buffer('phi_scale', torch.tensor(1. / math.sqrt(m)))
 
     def features(self):
         if self._features is None or self.redraw:
@@ -47,7 +47,6 @@ class FAVOR(nn.Module):
                     self._features.double())[0].to(self.phi_scale.dtype)
         return self._features
 
-
     def forward(self, keys, values, queries):
         """
         keys: (batch, keys_dimension, *keys_locations)
@@ -57,15 +56,17 @@ class FAVOR(nn.Module):
         # flattening everything
         keys_locations = keys.shape[2:]
         queries_locations = queries.shape[2:]
-        keys, values, queries = (x.view(*x.shape[:2], -1) for x in (keys, values, queries))
+        keys, values, queries = (x.view(*x.shape[:2], -1)
+                                 for x in (keys, values, queries))
 
         if self.causal and keys_locations != queries_locations:
             raise ValueError(
-                'Expected equal key and query locations with causal attention, got: '
-                '{}, {}'.format(keys_locations, queries_locations))
+                'Expected equal key and query locations with causal attention,'
+                ' got: {}, {}'.format(keys_locations, queries_locations))
 
         # getting to (batch, n, dim)
-        keys, values, queries = (x.permute(0, 2, 1) for x in (keys, values, queries))
+        keys, values, queries = (x.permute(0, 2, 1)
+                                 for x in (keys, values, queries))
 
         # features are (m, key_dim). randomized here if necessary
         features = self.features()
@@ -80,7 +81,7 @@ class FAVOR(nn.Module):
             # (batch, n, r)
             return torch.cat(
                 [f(projections) for f in self.f],
-                dim = -1
+                dim=-1
             ) * self.h(x) * self.phi_scale
 
         # (batch, n_context, r)
@@ -90,7 +91,8 @@ class FAVOR(nn.Module):
 
         if self.causal:
             # outer products of keys and values: (batch, n, r, dim)
-            k_v_prod = torch.matmul(phi_k[:, :, :, None], values[:, :, None, :])
+            k_v_prod = torch.matmul(
+                phi_k[:, :, :, None], values[:, :, None, :])
 
             out = torch.matmul(         # (batch, n, dim)
                 phi_q[:, :, None, :],   # (batch, n, 1, r)
@@ -103,9 +105,9 @@ class FAVOR(nn.Module):
                 phi_k.cumsum(dim=1)[..., None]  # (batch, n, r, 1)
             ).squeeze(2)
         else:
-            out = torch.matmul( # (batch, n, dim)
+            out = torch.matmul(  # (batch, n, dim)
                 phi_q,
-                torch.matmul( # (batch, r, dim)
+                torch.matmul(  # (batch, r, dim)
                     phi_k.permute(0, 2, 1), values
                 )
             )
@@ -113,7 +115,7 @@ class FAVOR(nn.Module):
             # normalization factors: (batch, n, 1)
             norm = torch.matmul(
                 phi_q,
-                phi_k.sum(dim=1)[..., None] # (batch, r, 1)
+                phi_k.sum(dim=1)[..., None]  # (batch, r, 1)
             )
 
         out /= norm
