@@ -118,7 +118,7 @@ class FAVOR(nn.Module):
                 phi_k.sum(dim=1)[..., None]  # (batch, r, 1)
             )
 
-        out /= norm
+        out = out / norm
 
         # restoring the desired shape
         out = out.permute(0, 2, 1)
