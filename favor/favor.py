@@ -31,6 +31,9 @@ class FAVOR(nn.Module):
         self.f = f
         self.randomizer=randomizer
 
+        if orthonormal and m > key_dim:
+            raise ValueError('m <= key_dim is required if orthonormal == True')
+
         self._features = None
         self.register_buffer('phi_scale', torch.tensor(1./ math.sqrt(m)))
 
@@ -38,13 +41,14 @@ class FAVOR(nn.Module):
     def features(self):
         if self._features is None or self.redraw:
             self._features = self.randomizer(
-                (self.m, self.key_dim),
+                (self.key_dim, self.m),
                 device=self.phi_scale.device,
                 dtype=self.phi_scale.dtype
             )
             if self.orthonormal:
                 self._features = torch.qr(
                     self._features.double())[0].to(self.phi_scale.dtype)
+            self._features.t_()
         return self._features
 
 
