@@ -15,6 +15,7 @@ class FAVOR(nn.Module):
         self,
         key_dim, # dimension of the keys
         orthonormal=True, # whether or not the random features are drawn orthonormal
+        causal=False, # whether or not to use causal ("unidirectional") attention
         m=128, # the number of random features to compute the attention
         redraw=True, # whether the features should be drawn anew each time
         h=lambda x: 1., # see paper
@@ -31,10 +32,12 @@ The forward function then comes as follows:
 def forward(self, keys, values, queries):
         """
         keys: (batch, keys_dimension, *keys_locations)
-        values: (batch, values_dimension, *values_locations)
+        values: (batch, values_dimension, *keys_locations)
         queries: (batch, keys_dimension, *queries_locations)
         """
 ```
+
+For causal attention, `keys_locations` and `queries_locations` must be equal.
 
 ## Installation
 
