@@ -30,7 +30,8 @@ class FAVOR(nn.Module):
         self.causal = causal
         self.redraw = redraw
         self.m = m
-        self.h = h if h is not None else lambda x: math.sqrt(m)
+        sqrt_m = math.sqrt(m)
+        self.h = h if h is not None else lambda x: sqrt_m
         self.f = f
         self.randomizer = randomizer
         self.eps = eps
@@ -40,7 +41,7 @@ class FAVOR(nn.Module):
             raise ValueError('m <= key_dim is required if orthonormal == True')
 
         self._features = None
-        self.register_buffer('phi_scale', torch.tensor(1. / math.sqrt(m)))
+        self.register_buffer('phi_scale', torch.tensor(1. / sqrt_m))
 
     def features(self):
         if self._features is None or self.redraw:
