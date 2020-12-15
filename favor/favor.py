@@ -17,9 +17,11 @@ class FAVOR(nn.Module):
         causal=False,
         m=128,
         redraw=True,
-        h=lambda x: 1.,
+        h=None,
         f=[F.relu],
         randomizer=torch.randn,
+        eps=0.0,
+        kernel_eps=0.001,
     ):
         super(FAVOR, self).__init__()
         self.key_dim = key_dim
@@ -28,9 +30,11 @@ class FAVOR(nn.Module):
         self.causal = causal
         self.redraw = redraw
         self.m = m
-        self.h = h
+        self.h = h if h is not None else lambda x: math.sqrt(m)
         self.f = f
         self.randomizer = randomizer
+        self.eps = eps
+        self.kernel_eps = kernel_eps
 
         if orthonormal and m > key_dim:
             raise ValueError('m <= key_dim is required if orthonormal == True')
@@ -86,7 +90,7 @@ class FAVOR(nn.Module):
             return torch.cat(
                 [f(projections) for f in self.f],
                 dim=-1
-            ) * self.h(x) * self.phi_scale
+            ) * self.h(x) * self.phi_scale + self.kernel_eps
 
         # (batch, n_context, r)
         phi_k = phi(keys)
@@ -122,7 +126,8 @@ class FAVOR(nn.Module):
                 phi_k.sum(dim=1)[..., None]  # (batch, r, 1)
             )
 
-        out = out / norm
+        # normalizing
+        out = out / (norm + 2 * self.eps * (norm.abs() <= self.eps))
 
         # restoring the desired shape
         out = out.permute(0, 2, 1)

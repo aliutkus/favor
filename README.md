@@ -18,9 +18,11 @@ class FAVOR(nn.Module):
         causal=False, # whether or not to use causal ("unidirectional") attention
         m=128, # the number of random features to compute the attention
         redraw=True, # whether the features should be drawn anew each time
-        h=lambda x: 1., # see paper
-        f=[F.relu,], # see paper
+        h=None, # feature coefficient (default: sqrt(m))
+        f=[F.relu,], # function(s) applied to projections (see paper)
         randomizer=torch.randn, # the randomizer for the features. default=gaussian
+        eps=0.0, # numerical stabilizer for renormalization
+        kernel_eps=0.001, # numerical stabilizer added after applying the kernel function
     )
 ```
 
