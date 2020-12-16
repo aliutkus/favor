@@ -1,10 +1,11 @@
+from warnings import warn
+import functools
+
 import torch
 from torch import nn
 import torch.nn.functional as F
-from warnings import warn
-import itertools
-import math
-import numpy as np
+
+from favor.kernels import relu_kernel_fn, non_negative_softmax_kernel_fn
 
 
 class FAVOR(nn.Module):
@@ -15,10 +16,11 @@ class FAVOR(nn.Module):
         key_dim,
         orthonormal=True,
         causal=False,
-        m=128,
+        m=256,
         redraw=True,
-        h=None,
-        f=[F.relu],
+        kernel_fn=relu_kernel_fn,
+        query_kernel_fn=None,
+        scale=1.,
         randomizer=torch.randn,
         eps=0.0,
         kernel_eps=0.001,
@@ -30,31 +32,30 @@ class FAVOR(nn.Module):
         self.causal = causal
         self.redraw = redraw
         self.m = m
-        sqrt_m = math.sqrt(m)
-        self.h = h if h is not None else lambda x: sqrt_m
-        self.f = f
+        self.kernel_fn = kernel_fn
+        self.query_kernel_fn = (query_kernel_fn if query_kernel_fn is not None
+                                else kernel_fn)
+        self.scale = scale
         self.randomizer = randomizer
         self.eps = eps
         self.kernel_eps = kernel_eps
 
         if orthonormal and m > key_dim:
+            # TODO: actually we do want to allow this, see official code
             raise ValueError('m <= key_dim is required if orthonormal == True')
 
-        self._features = None
-        self.register_buffer('phi_scale', torch.tensor(1. / sqrt_m))
+        self.register_buffer('proj_matrix', torch.zeros((m, key_dim)))
+        self.redraw_proj_matrix()
 
-    def features(self):
-        if self._features is None or self.redraw:
-            self._features = self.randomizer(
-                (self.key_dim, self.m),
-                device=self.phi_scale.device,
-                dtype=self.phi_scale.dtype
-            )
-            if self.orthonormal:
-                self._features = torch.qr(
-                    self._features.double())[0].to(self.phi_scale.dtype)
-            self._features.t_()
-        return self._features
+    def redraw_proj_matrix(self):
+        self.proj_matrix = self.randomizer(
+            (self.key_dim, self.m),
+            device=self.proj_matrix.device,
+            dtype=self.proj_matrix.dtype
+        )
+        if self.orthonormal:
+            self.proj_matrix = torch.qr(
+                self.proj_matrix.double())[0].to(self.proj_matrix.dtype)
 
     def forward(self, keys, values, queries):
         """
@@ -77,26 +78,27 @@ class FAVOR(nn.Module):
         keys, values, queries = (x.permute(0, 2, 1)
                                  for x in (keys, values, queries))
 
-        # features are (m, key_dim). randomized here if necessary
-        features = self.features()
+        # multiply by sqrt(scale), so that we end up with QK^T * scale
+        keys, queries = (x * self.scale ** .5 for x in (keys, queries))
+
+        # projection matrix is (m, key_dim). randomized here if necessary
+        if self.redraw:
+            self.redraw_proj_matrix()
 
         # getting the randomized features for keys and queries
-        def phi(x):
+        def phi(x, kernel_fn):
             # x is (batch, n, key_dim)
 
             # projections are (batch, n, m)
-            projections = torch.matmul(x, features.T)
+            projections = torch.matmul(x, self.proj_matrix)
 
             # (batch, n, r)
-            return torch.cat(
-                [f(projections) for f in self.f],
-                dim=-1
-            ) * self.h(x) * self.phi_scale + self.kernel_eps
+            return kernel_fn(x, projections) + self.kernel_eps
 
         # (batch, n_context, r)
-        phi_k = phi(keys)
+        phi_k = phi(keys, self.kernel_fn)
         # (batch, n, r)
-        phi_q = phi(queries)
+        phi_q = phi(queries, self.query_kernel_fn)
 
         if self.causal:
             # outer products of keys and values: (batch, n, r, dim)
@@ -134,3 +136,14 @@ class FAVOR(nn.Module):
         out = out.permute(0, 2, 1)
         out = out.reshape(*out.shape[:2], *queries_locations)
         return out
+
+
+def make_fast_softmax_attention(key_dim, orthonormal=True, causal=False,
+                                m=128, redraw=True, hyperbolic=True, eps=1e-6,
+                                kernel_eps=1e-6):
+    kernel_fn = functools.partial(non_negative_softmax_kernel_fn,
+                                  hyperbolic=hyperbolic)
+    return FAVOR(
+        kernel_fn=kernel_fn, scale=key_dim ** -0.5,
+        key_dim=key_dim, orthonormal=orthonormal, causal=causal, m=m,
+        redraw=redraw, eps=eps, kernel_eps=kernel_eps)

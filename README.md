@@ -16,10 +16,11 @@ class FAVOR(nn.Module):
         key_dim, # dimension of the keys
         orthonormal=True, # whether or not the random features are drawn orthonormal
         causal=False, # whether or not to use causal ("unidirectional") attention
-        m=128, # the number of random features to compute the attention
+        m=256, # the number of random features to compute the attention
         redraw=True, # whether the features should be drawn anew each time
-        h=None, # feature coefficient (default: sqrt(m))
-        f=[F.relu,], # function(s) applied to projections (see paper)
+        kernel_fn=relu_kernel_fn, # kernel function with parameters x (data) and u (projections)
+        query_kernel_fn=None, # different kernel function to use for queries; if None, defaults to kernel_fn
+        scale=1., # attention scale; keys and queries will be multiplied by sqrt(scale)
         randomizer=torch.randn, # the randomizer for the features. default=gaussian
         eps=0.0, # numerical stabilizer for renormalization
         kernel_eps=0.001, # numerical stabilizer added after applying the kernel function
